@@ -1,0 +1,273 @@
+"""
+modules/report.py
+
+Generates a clean, self-contained HTML report (CSS only, no JavaScript)
+summarizing the results of a recon scan, and writes it to
+`reports/<domain>.html`.
+"""
+
+from __future__ import annotations
+
+import html
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List
+
+
+def _table_rows(rows: List[List[str]], empty_message: str, colspan: int = 1) -> str:
+    """
+    Build <tr> HTML for a table body. All cell content is HTML-escaped
+    to keep the report safe even if a "subdomain" turned out to contain
+    unexpected characters.
+    """
+    if not rows:
+        return f'<tr><td colspan="{colspan}" class="empty">{html.escape(empty_message)}</td></tr>'
+
+    rendered_rows = []
+    for row in rows:
+        cells = "".join(f"<td>{html.escape(str(cell))}</td>" for cell in row)
+        rendered_rows.append(f"<tr>{cells}</tr>")
+    return "\n".join(rendered_rows)
+
+
+def generate_report(
+    domain: str,
+    passive_subdomains: List[str],
+    bruteforce_results: List[Dict[str, str]],
+    output_dir: str = "reports",
+) -> str:
+    """
+    Build an HTML recon report for `domain` and write it to disk.
+
+    Args:
+        domain: The target domain that was scanned.
+        passive_subdomains: Subdomains found via passive enumeration
+            (Sublist3r / crt.sh fallback).
+        bruteforce_results: List of {"hostname": ..., "ip": ...} dicts
+            found via DNS brute forcing.
+        output_dir: Directory the report should be written into.
+
+    Returns:
+        The path (as a string) to the generated `.html` report file.
+    """
+    scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    bruteforce_hostnames = {entry["hostname"] for entry in bruteforce_results}
+    total_unique_subdomains = sorted(set(passive_subdomains) | bruteforce_hostnames)
+
+    passive_rows_html = _table_rows(
+        [[sub] for sub in passive_subdomains],
+        empty_message="No passive subdomains found.",
+        colspan=1,
+    )
+
+    bruteforce_rows_html = _table_rows(
+        [[entry["hostname"], entry["ip"]] for entry in bruteforce_results],
+        empty_message="No additional hosts found via DNS brute force.",
+        colspan=2,
+    )
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Recon Report - {html.escape(domain)}</title>
+<style>
+    :root {{
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --border: #334155;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --accent-2: #34d399;
+        --row-alt: #16213a;
+    }}
+
+    * {{
+        box-sizing: border-box;
+    }}
+
+    body {{
+        margin: 0;
+        padding: 0;
+        background-color: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+    }}
+
+    .container {{
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px 20px 60px;
+    }}
+
+    header.report-header {{
+        border-bottom: 2px solid var(--accent);
+        padding-bottom: 20px;
+        margin-bottom: 30px;
+    }}
+
+    header.report-header h1 {{
+        margin: 0 0 6px 0;
+        font-size: 28px;
+        color: var(--accent);
+    }}
+
+    header.report-header p {{
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+    }}
+
+    .stats {{
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 36px;
+    }}
+
+    .stat-card {{
+        flex: 1;
+        min-width: 160px;
+        background-color: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px 20px;
+    }}
+
+    .stat-card .value {{
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--accent-2);
+    }}
+
+    .stat-card .label {{
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }}
+
+    section {{
+        margin-bottom: 36px;
+    }}
+
+    section h2 {{
+        font-size: 18px;
+        color: var(--text);
+        border-left: 4px solid var(--accent);
+        padding-left: 10px;
+        margin-bottom: 14px;
+    }}
+
+    table {{
+        width: 100%;
+        border-collapse: collapse;
+        background-color: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+    }}
+
+    th, td {{
+        text-align: left;
+        padding: 10px 14px;
+        font-size: 14px;
+        border-bottom: 1px solid var(--border);
+    }}
+
+    th {{
+        background-color: #273449;
+        color: var(--accent);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 12px;
+        letter-spacing: 0.05em;
+    }}
+
+    tr:nth-child(even) td {{
+        background-color: var(--row-alt);
+    }}
+
+    td.empty {{
+        color: var(--muted);
+        font-style: italic;
+        text-align: center;
+    }}
+
+    footer {{
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+        margin-top: 40px;
+        border-top: 1px solid var(--border);
+        padding-top: 16px;
+    }}
+</style>
+</head>
+<body>
+<div class="container">
+
+    <header class="report-header">
+        <h1>Automated Recon Tool &mdash; Scan Report</h1>
+        <p>Target domain: <strong>{html.escape(domain)}</strong> &nbsp;|&nbsp; Scanned: {html.escape(scan_time)}</p>
+    </header>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="value">{len(total_unique_subdomains)}</div>
+            <div class="label">Total Subdomains</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{len(passive_subdomains)}</div>
+            <div class="label">Passive Results</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{len(bruteforce_results)}</div>
+            <div class="label">DNS Brute-Force Hits</div>
+        </div>
+    </div>
+
+    <section>
+        <h2>Passive Enumeration Results</h2>
+        <table>
+            <thead>
+                <tr><th>Subdomain</th></tr>
+            </thead>
+            <tbody>
+{passive_rows_html}
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>DNS Brute-Force Results</h2>
+        <table>
+            <thead>
+                <tr><th>Hostname</th><th>IP Address</th></tr>
+            </thead>
+            <tbody>
+{bruteforce_rows_html}
+            </tbody>
+        </table>
+    </section>
+
+    <footer>
+        Generated by Automated Recon Tool (v1 MVP) &mdash; for authorized security testing only.
+    </footer>
+
+</div>
+</body>
+</html>
+"""
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    report_file = output_path / f"{domain}.html"
+    report_file.write_text(html_content, encoding="utf-8")
+
+    return str(report_file)
