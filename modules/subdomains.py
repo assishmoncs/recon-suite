@@ -21,7 +21,7 @@ produces a usable result instead of crashing.
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Tuple
 
 import requests
 
@@ -84,18 +84,22 @@ def _crtsh_fallback(domain: str) -> List[str]:
     return sorted(found)
 
 
-def enumerate_subdomains(domain: str, threads: int = 40) -> List[str]:
+def enumerate_subdomains(
+    domain: str, threads: int = 40
+) -> Tuple[List[str], str]:
     """
-    Run passive subdomain enumeration for `domain`.
+    Run passive subdomain enumeration for ``domain``.
 
     Args:
-        domain: The target domain, e.g. "example.com".
+        domain: The target domain, e.g. ``"example.com"``.
         threads: Number of worker threads Sublist3r should use internally.
 
     Returns:
-        A sorted list of unique, discovered subdomains. Returns an empty
-        list (rather than raising) if no sources could be reached -- the
-        caller is responsible for deciding how to report that.
+        A ``(subdomains, source)`` tuple where *subdomains* is a sorted
+        list of unique discovered subdomains and *source* is a label
+        describing which engine produced the results (``"Sublist3r"``
+        or ``"crt.sh"``).  Returns ``([], source)`` rather than raising
+        if no sources could be reached.
     """
     if SUBLIST3R_AVAILABLE:
         print_info(
@@ -108,19 +112,19 @@ def enumerate_subdomains(domain: str, threads: int = 40) -> List[str]:
                 threads,
                 savefile=None,
                 ports=None,
-                silent=True,  # we handle our own progress/output formatting
+                silent=True,
                 verbose=False,
-                enable_bruteforce=False,  # our own dns_bruteforce module covers this
-                engines=None,  # use Sublist3r's full default engine list
+                enable_bruteforce=False,
+                engines=None,
             )
-            return sorted(set(results))
-        except Exception as exc:  # Sublist3r can raise many different network errors
+            return sorted(set(results)), "Sublist3r"
+        except Exception as exc:
             print_warning(f"Sublist3r enumeration failed ({exc}).")
             print_info("Falling back to crt.sh passive lookup...")
-            return _crtsh_fallback(domain)
+            return _crtsh_fallback(domain), "crt.sh"
     else:
         print_warning(
             "The 'sublist3r' package is not installed (pip install sublist3r)."
         )
         print_info("Falling back to crt.sh passive lookup...")
-        return _crtsh_fallback(domain)
+        return _crtsh_fallback(domain), "crt.sh"

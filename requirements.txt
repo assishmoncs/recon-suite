@@ -2,3 +2,4 @@ sublist3r
 dnspython
 colorama
 requests
+tqdm

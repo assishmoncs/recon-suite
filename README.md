@@ -18,32 +18,49 @@ left out of this version and planned for later releases.
   library *in-process* (`import sublist3r`), not via shell commands. If
   Sublist3r isn't installed or its lookup fails, the tool automatically
   falls back to a lightweight passive lookup against crt.sh Certificate
-  Transparency logs so you still get a result.
-- **DNS brute force** -- reads candidate prefixes from `wordlists/subdomains.txt`,
-  builds `<word>.<domain>` candidates, and resolves them with `dnspython`
-  (falling back to the standard library `socket` module if dnspython isn't
-  available). Only hosts that actually resolve are kept; duplicates are
-  removed automatically.
+  Transparency logs so you still get a result. The discovery source
+  ("Sublist3r" or "crt.sh") is reported in the terminal and in the HTML
+  report.
+- **Concurrent DNS brute force** -- reads candidate prefixes from
+  `wordlists/subdomains.txt`, builds `<word>.<domain>` candidates, and
+  resolves them **concurrently** using `concurrent.futures.ThreadPoolExecutor`
+  (configurable via `--workers`). Resolution uses `dnspython` (falling back
+  to `socket` if unavailable). Only hosts that actually resolve are kept;
+  duplicates are removed automatically. DNS record types (A / CNAME) are
+  detected and included in results.
+- **Real-time progress bar** -- `tqdm` displays a dynamic progress bar
+  during DNS brute-force lookups (gracefully degrades if `tqdm` is not
+  installed).
+- **Robust error handling** -- specific exception handlers for network
+  errors (`requests.RequestException`), encoding issues
+  (`UnicodeDecodeError`), and I/O errors (`OSError`), with informative
+  messages and graceful fallbacks.
+- **Portable file paths** -- default wordlist and report paths are resolved
+  relative to the script location using `pathlib`, so the tool works
+  correctly regardless of the working directory.
 - **HTML report** -- generates a clean, styled `reports/<domain>.html`
-  report (CSS only, no JavaScript) summarizing everything that was found.
+  report (CSS only, no JavaScript) summarizing everything found, including
+  a **Source** column for passive results and a **Record Type** column for
+  brute-forced entries.
 - **Colored terminal output** -- via `colorama`, with clear progress
   messages at each stage.
 
 ## Project Structure
 
 ```
-Automated-Recon-Tool/
+recon-suite/
 │
 ├── main.py                  # CLI entry point / orchestration
 ├── requirements.txt
 ├── README.md
+├── .gitignore
 ├── reports/                 # Generated HTML reports land here
 ├── wordlists/
 │   └── subdomains.txt       # DNS brute-force wordlist
 └── modules/
     ├── __init__.py
     ├── subdomains.py        # Passive enumeration (Sublist3r + crt.sh fallback)
-    ├── dns_bruteforce.py    # Active DNS brute force
+    ├── dns_bruteforce.py    # Concurrent active DNS brute force
     ├── report.py            # HTML report generation
     └── utils.py             # Domain validation + colored output helpers
 ```
@@ -54,7 +71,7 @@ Requires **Python 3.11+**.
 
 ```bash
 git clone <this-repo>
-cd Automated-Recon-Tool
+cd recon-suite
 python3 -m venv venv
 source venv/bin/activate        # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -69,31 +86,38 @@ python main.py example.com
 Optional flags:
 
 ```bash
-python main.py example.com --wordlist wordlists/subdomains.txt --threads 40
+python main.py example.com --wordlist wordlists/subdomains.txt --threads 40 --workers 20
 ```
 
-| Flag          | Description                                         | Default                      |
-|---------------|------------------------------------------------------|-------------------------------|
-| `domain`      | Target domain (positional, required)                 | --                            |
-| `--wordlist`  | Path to the DNS brute-force wordlist                  | `wordlists/subdomains.txt`    |
-| `--threads`   | Threads used internally by Sublist3r                  | `40`                          |
+| Flag          | Description                                          | Default                      |
+|---------------|------------------------------------------------------|------------------------------|
+| `domain`      | Target domain (positional, required)                 | --                           |
+| `--wordlist`  | Path to the DNS brute-force wordlist                 | `wordlists/subdomains.txt`   |
+| `--threads`   | Threads used internally by Sublist3r                 | `40`                         |
+| `--workers`   | Concurrent workers for DNS brute-force lookups       | `20`                         |
 
 ### Example output
 
 ```
+==================================================
+      Automated Recon Tool -- v1 (MVP)
+==================================================
 Target: example.com
 
-Running passive enumeration...
-Found 15 subdomains.
+[*] Running passive enumeration...
+[*] Querying passive OSINT sources via Sublist3r (40 threads, this can take 10-60s)...
+[+] Found 15 subdomains (via Sublist3r).
 
-Running DNS brute force...
-Found 4 additional hosts.
+[*] Running DNS brute force...
+[*] Loaded 7 candidate prefixes from 'wordlists/subdomains.txt'.
+[*] Resolving with 20 concurrent workers...
+DNS brute-force: 100%|##########| 7/7 [00:02<00:00, 3.41host/s]
+[+] Found 4 additional hosts.
 
-Generating report...
+[*] Generating report...
+[+] Done!
 
-Done!
-
-Report:
+[*] Report:
 reports/example.com.html
 ```
 
@@ -107,19 +131,24 @@ reports/example.com.html
 
 1. **`main.py`** validates the domain (`modules/utils.validate_domain`) and
    orchestrates the three stages below, printing colored progress messages
-   throughout.
+   throughout. Exception handling catches specific error types (network,
+   I/O, encoding) for clearer diagnostics.
 2. **`modules/subdomains.py`** calls `sublist3r.main()` directly as a Python
    function call (no subprocess), with its own bruteforce module disabled
    since this tool has its own dedicated brute-force stage. If Sublist3r
    can't be imported or raises an error, it falls back to a crt.sh-based
-   lookup using `requests`.
+   lookup using `requests`. Returns both the results and the source label.
 3. **`modules/dns_bruteforce.py`** loads `wordlists/subdomains.txt`, builds
-   `<word>.<domain>` for each entry, and resolves it with `dnspython` (or
-   `socket` as a fallback). Only resolving hosts are kept, and a dict keyed
-   by hostname removes duplicates automatically.
+   `<word>.<domain>` for each entry, and resolves them **concurrently**
+   using `ThreadPoolExecutor` with `dnspython` (or `socket` as a fallback).
+   Only resolving hosts are kept. Each result includes the DNS record type
+   (A or CNAME). A `tqdm` progress bar shows real-time progress. Non-UTF-8
+   wordlists are handled gracefully with an informative error message.
 4. **`modules/report.py`** renders everything into a single self-contained
    HTML file with embedded CSS (dark theme, summary stat cards, and two
-   results tables) and writes it to `reports/<domain>.html`.
+   results tables) and writes it to `reports/<domain>.html`. The passive
+   table includes a Source column and the brute-force table includes a
+   Record Type column.
 
 ## Notes on Sublist3r
 

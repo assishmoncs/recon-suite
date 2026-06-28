@@ -3,7 +3,11 @@ modules/report.py
 
 Generates a clean, self-contained HTML report (CSS only, no JavaScript)
 summarizing the results of a recon scan, and writes it to
-`reports/<domain>.html`.
+``reports/<domain>.html``.
+
+The report includes DNS record types (A / CNAME) for brute-forced
+entries and labels passive subdomains with their discovery source
+(e.g. "Sublist3r", "crt.sh").
 """
 
 from __future__ import annotations
@@ -35,20 +39,24 @@ def generate_report(
     passive_subdomains: List[str],
     bruteforce_results: List[Dict[str, str]],
     output_dir: str = "reports",
+    passive_source: str = "Sublist3r",
 ) -> str:
     """
-    Build an HTML recon report for `domain` and write it to disk.
+    Build an HTML recon report for ``domain`` and write it to disk.
 
     Args:
         domain: The target domain that was scanned.
         passive_subdomains: Subdomains found via passive enumeration
             (Sublist3r / crt.sh fallback).
-        bruteforce_results: List of {"hostname": ..., "ip": ...} dicts
-            found via DNS brute forcing.
+        bruteforce_results: List of dicts with keys ``"hostname"``,
+            ``"ip"``, and optionally ``"record_type"`` found via DNS
+            brute forcing.
         output_dir: Directory the report should be written into.
+        passive_source: Label for the passive enumeration engine that
+            produced results (e.g. ``"Sublist3r"``, ``"crt.sh"``).
 
     Returns:
-        The path (as a string) to the generated `.html` report file.
+        The path (as a string) to the generated ``.html`` report file.
     """
     scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -56,15 +64,18 @@ def generate_report(
     total_unique_subdomains = sorted(set(passive_subdomains) | bruteforce_hostnames)
 
     passive_rows_html = _table_rows(
-        [[sub] for sub in passive_subdomains],
+        [[sub, passive_source] for sub in passive_subdomains],
         empty_message="No passive subdomains found.",
-        colspan=1,
+        colspan=2,
     )
 
     bruteforce_rows_html = _table_rows(
-        [[entry["hostname"], entry["ip"]] for entry in bruteforce_results],
+        [
+            [entry["hostname"], entry["ip"], entry.get("record_type", "A")]
+            for entry in bruteforce_results
+        ],
         empty_message="No additional hosts found via DNS brute force.",
-        colspan=2,
+        colspan=3,
     )
 
     html_content = f"""<!DOCTYPE html>
@@ -235,7 +246,7 @@ def generate_report(
         <h2>Passive Enumeration Results</h2>
         <table>
             <thead>
-                <tr><th>Subdomain</th></tr>
+                <tr><th>Subdomain</th><th>Source</th></tr>
             </thead>
             <tbody>
 {passive_rows_html}
@@ -247,7 +258,7 @@ def generate_report(
         <h2>DNS Brute-Force Results</h2>
         <table>
             <thead>
-                <tr><th>Hostname</th><th>IP Address</th></tr>
+                <tr><th>Hostname</th><th>IP Address</th><th>Record Type</th></tr>
             </thead>
             <tbody>
 {bruteforce_rows_html}

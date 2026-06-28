@@ -21,6 +21,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
+
+import requests
 
 from modules import dns_bruteforce, report, subdomains
 from modules.utils import (
@@ -31,8 +34,11 @@ from modules.utils import (
     validate_domain,
 )
 
-DEFAULT_WORDLIST = "wordlists/subdomains.txt"
-DEFAULT_REPORT_DIR = "reports"
+# Resolve paths relative to *this* file so the tool works correctly
+# regardless of the caller's working directory.
+_PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_WORDLIST = str(_PROJECT_ROOT / "wordlists" / "subdomains.txt")
+DEFAULT_REPORT_DIR = str(_PROJECT_ROOT / "reports")
 DEFAULT_THREADS = 40
 
 
@@ -57,6 +63,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_THREADS,
         help=f"Threads for passive enumeration (default: {DEFAULT_THREADS})",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=20,
+        help="Concurrent workers for DNS brute-force lookups (default: 20)",
+    )
     return parser.parse_args(argv)
 
 
@@ -75,17 +87,39 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- Step 1: Passive subdomain enumeration ----------------------------
     print_info("Running passive enumeration...")
+    passive_source = "Sublist3r"
     try:
-        passive_subdomains = subdomains.enumerate_subdomains(domain, threads=args.threads)
-    except Exception as exc:  # keep the tool alive even on unexpected errors
+        passive_subdomains, passive_source = subdomains.enumerate_subdomains(
+            domain, threads=args.threads
+        )
+    except requests.RequestException as exc:
+        print_error(f"Passive enumeration failed (network error): {exc}")
+        passive_subdomains = []
+        passive_source = "N/A"
+    except (OSError, IOError) as exc:
+        print_error(f"Passive enumeration failed (I/O error): {exc}")
+        passive_subdomains = []
+        passive_source = "N/A"
+    except Exception as exc:
         print_error(f"Passive enumeration failed unexpectedly: {exc}")
         passive_subdomains = []
-    print_success(f"Found {len(passive_subdomains)} subdomains.\n")
+        passive_source = "N/A"
+    print_success(f"Found {len(passive_subdomains)} subdomains (via {passive_source}).\n")
 
     # --- Step 2: DNS brute force -------------------------------------------
     print_info("Running DNS brute force...")
     try:
-        bruteforce_results = dns_bruteforce.brute_force(domain, wordlist_path=args.wordlist)
+        bruteforce_results = dns_bruteforce.brute_force(
+            domain,
+            wordlist_path=args.wordlist,
+            max_workers=args.workers,
+        )
+    except UnicodeDecodeError as exc:
+        print_error(f"DNS brute force failed (wordlist encoding error): {exc}")
+        bruteforce_results = []
+    except (OSError, IOError) as exc:
+        print_error(f"DNS brute force failed (I/O error): {exc}")
+        bruteforce_results = []
     except Exception as exc:
         print_error(f"DNS brute force failed unexpectedly: {exc}")
         bruteforce_results = []
@@ -102,7 +136,11 @@ def main(argv: list[str] | None = None) -> int:
             passive_subdomains=passive_subdomains,
             bruteforce_results=bruteforce_results,
             output_dir=DEFAULT_REPORT_DIR,
+            passive_source=passive_source,
         )
+    except (OSError, IOError) as exc:
+        print_error(f"Report generation failed (I/O error): {exc}")
+        return 1
     except Exception as exc:
         print_error(f"Report generation failed: {exc}")
         return 1
