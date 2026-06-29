@@ -1,10 +1,8 @@
-# Automated Recon Tool (v1 -- MVP)
+# Automated Recon Tool (v2)
 
-A clean, modular Python 3 command-line tool for basic domain reconnaissance.
-This is **version 1**: a minimal, working MVP focused on passive subdomain
-enumeration, DNS brute forcing, and HTML report generation. More advanced
-features (Shodan, theHarvester, Wappalyzer, PDF reports) are intentionally
-left out of this version and planned for later releases.
+A clean, modular Python 3 command-line tool for domain reconnaissance.
+This is **version 2** with enhanced passive enumeration, PDF report
+generation, expanded wordlists, and improved error resilience.
 
 > **Ethical use only.** Only scan domains you own or have explicit, written
 > authorization to test. Unauthorized scanning of third-party infrastructure
@@ -16,32 +14,31 @@ left out of this version and planned for later releases.
   before doing any work.
 - **Passive subdomain enumeration** -- uses the [Sublist3r](https://github.com/aboul3la/Sublist3r)
   library *in-process* (`import sublist3r`), not via shell commands. If
-  Sublist3r isn't installed or its lookup fails, the tool automatically
-  falls back to a lightweight passive lookup against crt.sh Certificate
-  Transparency logs so you still get a result. The discovery source
-  ("Sublist3r" or "crt.sh") is reported in the terminal and in the HTML
-  report.
+  Sublist3r isn't installed or returns no results, the tool aggregates
+  results from **multiple fallback sources**:
+  - **crt.sh** -- Certificate Transparency logs with retry logic and
+    exponential backoff (3 retries, 30s timeout).
+  - **AlienVault OTX** -- Open Threat Exchange passive DNS (no API key
+    required).
+  - **HackerTarget** -- Free host search API.
 - **Concurrent DNS brute force** -- reads candidate prefixes from
-  `wordlists/subdomains.txt`, builds `<word>.<domain>` candidates, and
-  resolves them **concurrently** using `concurrent.futures.ThreadPoolExecutor`
+  `wordlists/subdomains.txt` (109 entries covering common infrastructure
+  patterns), builds `<word>.<domain>` candidates, and resolves them
+  **concurrently** using `concurrent.futures.ThreadPoolExecutor`
   (configurable via `--workers`). Resolution uses `dnspython` (falling back
-  to `socket` if unavailable). Only hosts that actually resolve are kept;
-  duplicates are removed automatically. DNS record types (A / CNAME) are
-  detected and included in results.
+  to `socket` if unavailable). DNS record types (A / CNAME) are detected.
 - **Real-time progress bar** -- `tqdm` displays a dynamic progress bar
-  during DNS brute-force lookups (gracefully degrades if `tqdm` is not
-  installed).
+  during DNS brute-force lookups.
+- **Dual report formats** -- generates both HTML and PDF reports by default:
+  - **HTML**: Self-contained dark-theme report with embedded CSS.
+  - **PDF**: Print-friendly A4 report via `xhtml2pdf`.
+  - Controlled via `--output-format` (html, pdf, or both).
 - **Robust error handling** -- specific exception handlers for network
-  errors (`requests.RequestException`), encoding issues
-  (`UnicodeDecodeError`), and I/O errors (`OSError`), with informative
-  messages and graceful fallbacks.
+  errors, encoding issues, and I/O errors, with informative messages
+  and graceful fallbacks. Sublist3r's noisy stderr warnings are
+  suppressed.
 - **Portable file paths** -- default wordlist and report paths are resolved
-  relative to the script location using `pathlib`, so the tool works
-  correctly regardless of the working directory.
-- **HTML report** -- generates a clean, styled `reports/<domain>.html`
-  report (CSS only, no JavaScript) summarizing everything found, including
-  a **Source** column for passive results and a **Record Type** column for
-  brute-forced entries.
+  relative to the script location using `pathlib`.
 - **Colored terminal output** -- via `colorama`, with clear progress
   messages at each stage.
 
@@ -54,14 +51,14 @@ recon-suite/
 ├── requirements.txt
 ├── README.md
 ├── .gitignore
-├── reports/                 # Generated HTML reports land here
+├── reports/                 # Generated HTML + PDF reports land here
 ├── wordlists/
-│   └── subdomains.txt       # DNS brute-force wordlist
+│   └── subdomains.txt       # DNS brute-force wordlist (109 entries)
 └── modules/
     ├── __init__.py
-    ├── subdomains.py        # Passive enumeration (Sublist3r + crt.sh fallback)
+    ├── subdomains.py        # Passive enumeration (Sublist3r + multi-source fallback)
     ├── dns_bruteforce.py    # Concurrent active DNS brute force
-    ├── report.py            # HTML report generation
+    ├── report.py            # HTML + PDF report generation
     └── utils.py             # Domain validation + colored output helpers
 ```
 
@@ -86,94 +83,78 @@ python main.py example.com
 Optional flags:
 
 ```bash
-python main.py example.com --wordlist wordlists/subdomains.txt --threads 40 --workers 20
+python main.py example.com --wordlist wordlists/subdomains.txt --threads 40 --workers 20 --output-format both
 ```
 
-| Flag          | Description                                          | Default                      |
-|---------------|------------------------------------------------------|------------------------------|
-| `domain`      | Target domain (positional, required)                 | --                           |
-| `--wordlist`  | Path to the DNS brute-force wordlist                 | `wordlists/subdomains.txt`   |
-| `--threads`   | Threads used internally by Sublist3r                 | `40`                         |
-| `--workers`   | Concurrent workers for DNS brute-force lookups       | `20`                         |
+| Flag              | Description                                          | Default                      |
+|-------------------|------------------------------------------------------|------------------------------|
+| `domain`          | Target domain (positional, required)                 | --                           |
+| `--wordlist`      | Path to the DNS brute-force wordlist                 | `wordlists/subdomains.txt`   |
+| `--threads`       | Threads used internally by Sublist3r                 | `40`                         |
+| `--workers`       | Concurrent workers for DNS brute-force lookups       | `20`                         |
+| `--output-format` | Report format: `html`, `pdf`, or `both`              | `both`                       |
 
 ### Example output
 
 ```
 ==================================================
-      Automated Recon Tool -- v1 (MVP)
+      Automated Recon Tool -- v2
 ==================================================
 Target: example.com
 
 [*] Running passive enumeration...
 [*] Querying passive OSINT sources via Sublist3r (40 threads, this can take 10-60s)...
-[+] Found 15 subdomains (via Sublist3r).
+[!] Sublist3r returned no results.
+[*] Falling back to multi-source passive lookup...
+[*] Querying crt.sh Certificate Transparency logs...
+[*] Querying AlienVault OTX...
+[*] Querying HackerTarget...
+[+] Found 23 subdomains (via crt.sh, AlienVault OTX, HackerTarget).
 
 [*] Running DNS brute force...
-[*] Loaded 7 candidate prefixes from 'wordlists/subdomains.txt'.
+[*] Loaded 109 candidate prefixes from 'wordlists/subdomains.txt'.
 [*] Resolving with 20 concurrent workers...
-DNS brute-force: 100%|##########| 7/7 [00:02<00:00, 3.41host/s]
-[+] Found 4 additional hosts.
+DNS brute-force: 100%|##########| 109/109 [00:12<00:00, 8.74host/s]
+[+] Found 6 additional hosts.
 
 [*] Generating report...
 [+] Done!
 
-[*] Report:
-reports/example.com.html
-```
-
-Open the generated file in any browser:
-
-```bash
-reports/example.com.html
+[*] Report(s):
+  reports/example.com.html
+  reports/example.com.pdf
 ```
 
 ## How it works
 
 1. **`main.py`** validates the domain (`modules/utils.validate_domain`) and
    orchestrates the three stages below, printing colored progress messages
-   throughout. Exception handling catches specific error types (network,
-   I/O, encoding) for clearer diagnostics.
+   throughout.
 2. **`modules/subdomains.py`** calls `sublist3r.main()` directly as a Python
-   function call (no subprocess), with its own bruteforce module disabled
-   since this tool has its own dedicated brute-force stage. If Sublist3r
-   can't be imported or raises an error, it falls back to a crt.sh-based
-   lookup using `requests`. Returns both the results and the source label.
-3. **`modules/dns_bruteforce.py`** loads `wordlists/subdomains.txt`, builds
-   `<word>.<domain>` for each entry, and resolves them **concurrently**
-   using `ThreadPoolExecutor` with `dnspython` (or `socket` as a fallback).
-   Only resolving hosts are kept. Each result includes the DNS record type
-   (A or CNAME). A `tqdm` progress bar shows real-time progress. Non-UTF-8
-   wordlists are handled gracefully with an informative error message.
-4. **`modules/report.py`** renders everything into a single self-contained
-   HTML file with embedded CSS (dark theme, summary stat cards, and two
-   results tables) and writes it to `reports/<domain>.html`. The passive
-   table includes a Source column and the brute-force table includes a
-   Record Type column.
+   function call (no subprocess), with Sublist3r's noisy stderr suppressed.
+   If Sublist3r can't be imported, raises an error, or returns empty results,
+   it falls back to an aggregated multi-source lookup (crt.sh with retry +
+   AlienVault OTX + HackerTarget).
+3. **`modules/dns_bruteforce.py`** loads `wordlists/subdomains.txt` (109
+   entries), builds `<word>.<domain>` for each entry, and resolves them
+   concurrently using `ThreadPoolExecutor` with `dnspython` (or `socket`
+   fallback). A `tqdm` progress bar shows real-time progress.
+4. **`modules/report.py`** renders results into:
+   - A self-contained HTML file (dark theme, stat cards, two results tables).
+   - A PDF file (A4, print-friendly light theme) using `xhtml2pdf`.
 
-## Notes on Sublist3r
+## Error Fixes in v2
 
-Sublist3r is installed as a regular PyPI package:
+The following issues from v1 have been addressed:
 
-```bash
-pip install sublist3r
-```
-
-This exposes a `sublist3r.main(...)` function that this tool imports and
-calls directly -- see `modules/subdomains.py`. Because Sublist3r queries a
-number of public search engines and OSINT services over the network, results
-(and runtime) will vary depending on your network environment and on those
-services' current availability/rate limits. The built-in crt.sh fallback
-ensures the tool still produces a result even if Sublist3r itself can't run.
-
-## Not Included in v1 (Planned for Later)
-
-The following are intentionally **out of scope** for this MVP and will be
-added in future versions:
-
-- Shodan integration
-- theHarvester integration
-- Wappalyzer / technology fingerprinting
-- PDF report generation
+| Issue | Fix |
+|-------|-----|
+| `[!] Error: Coloring libraries not installed` | Sublist3r's stderr suppressed during import and execution |
+| `Sublist3r engine 'DNSdumpster' failed` | Automatic fallback to multi-source passive lookup when Sublist3r returns no results |
+| `crt.sh fallback lookup failed: Read timed out` | Timeout increased to 30s with 3 retries + exponential backoff |
+| `Found 0 subdomains` | Added AlienVault OTX and HackerTarget as additional sources |
+| Small wordlist (7 entries) | Expanded to 109 common infrastructure prefixes |
+| No PDF output | Added xhtml2pdf-based PDF report generation |
 
 ## License
 
