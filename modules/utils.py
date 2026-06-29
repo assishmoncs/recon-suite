@@ -59,7 +59,7 @@ def print_banner(domain: str) -> None:
     """Print the tool's startup banner with the target domain."""
     line = "=" * 50
     print(Fore.CYAN + Style.BRIGHT + line)
-    print(Fore.CYAN + Style.BRIGHT + "      Automated Recon Tool -- v1 (MVP)")
+    print(Fore.CYAN + Style.BRIGHT + "      Automated Recon Tool -- v2")
     print(Fore.CYAN + Style.BRIGHT + line)
     print(Fore.WHITE + Style.BRIGHT + f"Target: {domain}\n")
 

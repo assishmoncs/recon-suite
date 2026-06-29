@@ -14,6 +14,7 @@ env/
 
 # Generated reports (keep the directory via .gitkeep)
 reports/*.html
+reports/*.pdf
 
 # IDE / editor
 .vscode/
