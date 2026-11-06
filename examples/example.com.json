@@ -1,0 +1,204 @@
+{
+  "schema_version": "3.0",
+  "domain": "example.com",
+  "scanned_at": "2026-11-06 11:20:37",
+  "passive_source_summary": "crt.sh, AlienVault OTX, HackerTarget, URLScan.io, CertSpotter",
+  "statistics": {
+    "total_unique_subdomains": 7,
+    "resolved_hosts": 6,
+    "passive_count": 6,
+    "bruteforce_count": 3,
+    "dangling_cname_alerts": 1
+  },
+  "dns_security_posture": {
+    "ns_records": [
+      "a.iana-servers.net",
+      "b.iana-servers.net"
+    ],
+    "mx_records": [
+      "10 mail.example.com"
+    ],
+    "spf_record": "v=spf1 include:_spf.example.com -all",
+    "dmarc_record": "v=DMARC1; p=reject; rua=mailto:dmarc@example.com",
+    "caa_records": [
+      "0 issue \"letsencrypt.org\"",
+      "0 issue \"digicert.com\""
+    ]
+  },
+  "diff_summary": null,
+  "unified_assets": [
+    {
+      "hostname": "api.example.com",
+      "ip": "93.184.216.34",
+      "ipv6": "2606:2800:220:1::34",
+      "record_type": "A",
+      "cname_target": "",
+      "sources": [
+        "crt.sh",
+        "AlienVault OTX",
+        "CertSpotter",
+        "DNS Brute-Force"
+      ],
+      "status": "RESOLVED",
+      "http_status": 200,
+      "scheme": "HTTPS",
+      "server": "cloudflare",
+      "tls_days_remaining": 74,
+      "security_headers": [
+        "HSTS",
+        "CSP",
+        "XCTO"
+      ],
+      "hygiene_warning": ""
+    },
+    {
+      "hostname": "auth.example.com",
+      "ip": "93.184.216.35",
+      "ipv6": "",
+      "record_type": "CNAME",
+      "cname_target": "sso.okta.com",
+      "sources": [
+        "crt.sh",
+        "URLScan.io"
+      ],
+      "status": "RESOLVED",
+      "http_status": 302,
+      "scheme": "HTTPS",
+      "server": "nginx",
+      "tls_days_remaining": 112,
+      "security_headers": [
+        "HSTS",
+        "XFO"
+      ],
+      "hygiene_warning": ""
+    },
+    {
+      "hostname": "dev-docs.example.com",
+      "ip": "",
+      "ipv6": "",
+      "record_type": "CNAME",
+      "cname_target": "example-legacy-docs.github.io",
+      "sources": [
+        "crt.sh"
+      ],
+      "status": "DANGLING_CNAME",
+      "http_status": null,
+      "scheme": "",
+      "server": "",
+      "tls_days_remaining": null,
+      "security_headers": [],
+      "hygiene_warning": "Unresolved CNAME to GitHub Pages (example-legacy-docs.github.io)"
+    },
+    {
+      "hostname": "grafana.example.com",
+      "ip": "198.51.100.25",
+      "ipv6": "",
+      "record_type": "A",
+      "cname_target": "",
+      "sources": [
+        "AlienVault OTX"
+      ],
+      "status": "RESOLVED",
+      "http_status": 200,
+      "scheme": "HTTPS",
+      "server": "Grafana",
+      "tls_days_remaining": 19,
+      "security_headers": [
+        "XFO"
+      ],
+      "hygiene_warning": ""
+    },
+    {
+      "hostname": "mail.example.com",
+      "ip": "93.184.216.40",
+      "ipv6": "",
+      "record_type": "A",
+      "cname_target": "",
+      "sources": [
+        "crt.sh",
+        "HackerTarget",
+        "DNS Brute-Force"
+      ],
+      "status": "RESOLVED",
+      "http_status": null,
+      "scheme": "",
+      "server": "",
+      "tls_days_remaining": null,
+      "security_headers": [],
+      "hygiene_warning": ""
+    },
+    {
+      "hostname": "portal.example.com",
+      "ip": "93.184.216.38",
+      "ipv6": "",
+      "record_type": "A",
+      "cname_target": "",
+      "sources": [
+        "crt.sh",
+        "URLScan.io"
+      ],
+      "status": "RESOLVED",
+      "http_status": 200,
+      "scheme": "HTTPS",
+      "server": "envoy",
+      "tls_days_remaining": 88,
+      "security_headers": [
+        "HSTS",
+        "CSP",
+        "XFO",
+        "XCTO"
+      ],
+      "hygiene_warning": ""
+    },
+    {
+      "hostname": "vpn.example.com",
+      "ip": "198.51.100.12",
+      "ipv6": "",
+      "record_type": "A",
+      "cname_target": "",
+      "sources": [
+        "DNS Brute-Force"
+      ],
+      "status": "RESOLVED",
+      "http_status": 403,
+      "scheme": "HTTPS",
+      "server": "OpenVPN-AS",
+      "tls_days_remaining": 61,
+      "security_headers": [
+        "HSTS"
+      ],
+      "hygiene_warning": ""
+    }
+  ],
+  "passive_subdomains": [
+    "api.example.com",
+    "auth.example.com",
+    "dev-docs.example.com",
+    "grafana.example.com",
+    "mail.example.com",
+    "portal.example.com"
+  ],
+  "bruteforce_results": [
+    {
+      "hostname": "api.example.com",
+      "ip": "93.184.216.34",
+      "ipv6": "2606:2800:220:1::34",
+      "record_type": "A",
+      "cname_target": ""
+    },
+    {
+      "hostname": "mail.example.com",
+      "ip": "93.184.216.40",
+      "ipv6": "",
+      "record_type": "A",
+      "cname_target": ""
+    },
+    {
+      "hostname": "vpn.example.com",
+      "ip": "198.51.100.12",
+      "ipv6": "",
+      "record_type": "A",
+      "cname_target": ""
+    }
+  ]
+}

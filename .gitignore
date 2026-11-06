@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.pyo
 *.egg-info/
 dist/
@@ -15,8 +16,11 @@ env/
 # Generated reports (keep the directory via .gitkeep)
 reports/*.html
 reports/*.pdf
+reports/*.json
+reports/*.csv
 
-# IDE / editor
+# Agent / IDE / editor artifacts
+.agents/
 .vscode/
 .idea/
 *.swp
