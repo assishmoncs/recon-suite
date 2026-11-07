@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recon Report - example.com</title>
+<style>
+    :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --border: #334155;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --accent-2: #34d399;
+        --warning: #fbbf24;
+        --danger: #f87171;
+        --row-alt: #16213a;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        background-color: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+    }
+
+    .container {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 40px 20px 60px;
+    }
+
+    header.report-header {
+        border-bottom: 2px solid var(--accent);
+        padding-bottom: 20px;
+        margin-bottom: 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    header.report-header h1 {
+        margin: 0 0 6px 0;
+        font-size: 28px;
+        color: var(--accent);
+    }
+
+    header.report-header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+    }
+
+    .stats {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 32px;
+    }
+
+    .stat-card {
+        flex: 1;
+        min-width: 155px;
+        background-color: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px 18px;
+    }
+
+    .stat-card .value {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--accent-2);
+    }
+
+    .stat-card .value.warn {
+        color: var(--danger);
+    }
+
+    .stat-card .label {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    section {
+        margin-bottom: 36px;
+    }
+
+    section h2 {
+        font-size: 18px;
+        color: var(--text);
+        border-left: 4px solid var(--accent);
+        padding-left: 10px;
+        margin-bottom: 14px;
+    }
+
+    .controls-bar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 14px;
+    }
+
+    .search-input {
+        flex: 1;
+        min-width: 220px;
+        background-color: var(--panel);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .filter-btn {
+        background-color: var(--panel);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        padding: 7px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .filter-btn.active, .filter-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    th, td {
+        text-align: left;
+        padding: 10px 14px;
+        font-size: 13px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+    }
+
+    th {
+        background-color: #273449;
+        color: var(--accent);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    tr:nth-child(even) td {
+        background-color: var(--row-alt);
+    }
+
+    td.empty {
+        color: var(--muted);
+        font-style: italic;
+        text-align: center;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        margin: 1px 2px;
+    }
+
+    .badge-source {
+        background-color: rgba(56, 189, 248, 0.15);
+        color: var(--accent);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+
+    .badge-ok {
+        background-color: rgba(52, 211, 153, 0.15);
+        color: var(--accent-2);
+        border: 1px solid rgba(52, 211, 153, 0.35);
+    }
+
+    .badge-new {
+        background-color: rgba(251, 191, 36, 0.2);
+        color: var(--warning);
+        border: 1px solid rgba(251, 191, 36, 0.45);
+    }
+
+    .badge-danger {
+        background-color: rgba(248, 113, 113, 0.18);
+        color: var(--danger);
+        border: 1px solid rgba(248, 113, 113, 0.45);
+    }
+
+    .badge-muted {
+        background-color: rgba(148, 163, 184, 0.12);
+        color: var(--muted);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    footer {
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+        margin-top: 40px;
+        border-top: 1px solid var(--border);
+        padding-top: 16px;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <header class="report-header">
+        <div>
+            <h1>Automated Recon Suite (v3) &mdash; Scan Report</h1>
+            <p>Target domain: <strong>example.com</strong> &nbsp;|&nbsp; Scanned: 2026-11-06 11:20:37</p>
+        </div>
+        <p>Passive Engine(s): <strong>crt.sh, AlienVault OTX, HackerTarget, URLScan.io, CertSpotter</strong></p>
+    </header>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="value">7</div>
+            <div class="label">Total Subdomains</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">6</div>
+            <div class="label">Resolved Live Hosts</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">6</div>
+            <div class="label">Passive Results</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">3</div>
+            <div class="label">DNS Brute-Force Hits</div>
+        </div>
+        <div class="stat-card">
+            <div class="value warn">1</div>
+            <div class="label">Dangling DNS Alerts</div>
+        </div>
+    </div>
+
+
+
+    <section>
+        <h2>Unified Attack-Surface &amp; DNS Hygiene Inventory</h2>
+        <div class="controls-bar">
+            <input type="text" id="assetSearch" class="search-input" placeholder="Search hostname, IP, CNAME, or OSINT source..." onkeyup="filterAssets()">
+            <button class="filter-btn active" onclick="setCategoryFilter('all', this)">All (7)</button>
+            <button class="filter-btn" onclick="setCategoryFilter('resolved', this)">Resolved (6)</button>
+            <button class="filter-btn" onclick="setCategoryFilter('cname', this)">CNAMEs</button>
+            <button class="filter-btn" onclick="setCategoryFilter('multisource', this)">Multi-Source</button>
+            <button class="filter-btn" onclick="setCategoryFilter('warning', this)">Hygiene Alerts (1)</button>
+        </div>
+        <table id="unifiedTable">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">Hostname &#x25B4;&#x25BE;</th>
+                    <th onclick="sortTable(1)">IP Address (v4 / v6) &#x25B4;&#x25BE;</th>
+                    <th onclick="sortTable(2)">Record &#x25B4;&#x25BE;</th>
+                    <th onclick="sortTable(3)">CNAME Target &#x25B4;&#x25BE;</th>
+                    <th>Discovery Sources</th>
+                    <th>HTTP / TLS Posture</th>
+                    <th>Hygiene Status</th>
+                </tr>
+            </thead>
+            <tbody>
+<tr class="asset-row" data-resolved="1" data-cname="0" data-multisource="1" data-warning="0"><td><strong>api.example.com</strong></td><td>93.184.216.34 / 2606:2800:220:1::34</td><td>A</td><td>—</td><td><span class="badge badge-source">crt.sh</span> <span class="badge badge-source">AlienVault OTX</span> <span class="badge badge-source">CertSpotter</span> <span class="badge badge-source">DNS Brute-Force</span></td><td>HTTPS 200 (TLS: 74d) [HSTS,CSP,XCTO]</td><td><span class="badge badge-ok">RESOLVED</span></td></tr>
+<tr class="asset-row" data-resolved="1" data-cname="1" data-multisource="1" data-warning="0"><td><strong>auth.example.com</strong></td><td>93.184.216.35</td><td>CNAME</td><td>sso.okta.com</td><td><span class="badge badge-source">crt.sh</span> <span class="badge badge-source">URLScan.io</span></td><td>HTTPS 302 (TLS: 112d) [HSTS,XFO]</td><td><span class="badge badge-ok">RESOLVED</span></td></tr>
+<tr class="asset-row" data-resolved="0" data-cname="1" data-multisource="0" data-warning="1"><td><strong>dev-docs.example.com</strong></td><td>—</td><td>CNAME</td><td>example-legacy-docs.github.io</td><td><span class="badge badge-source">crt.sh</span></td><td>—</td><td><span class="badge badge-danger">Unresolved CNAME to GitHub Pages (example-legacy-docs.github.io)</span></td></tr>
+<tr class="asset-row" data-resolved="1" data-cname="0" data-multisource="0" data-warning="0"><td><strong>grafana.example.com</strong></td><td>198.51.100.25</td><td>A</td><td>—</td><td><span class="badge badge-source">AlienVault OTX</span></td><td>HTTPS 200 (TLS: 19d) [XFO]</td><td><span class="badge badge-ok">RESOLVED</span></td></tr>
+<tr class="asset-row" data-resolved="1" data-cname="0" data-multisource="1" data-warning="0"><td><strong>mail.example.com</strong></td><td>93.184.216.40</td><td>A</td><td>—</td><td><span class="badge badge-source">crt.sh</span> <span class="badge badge-source">HackerTarget</span> <span class="badge badge-source">DNS Brute-Force</span></td><td>—</td><td><span class="badge badge-ok">RESOLVED</span></td></tr>
+<tr class="asset-row" data-resolved="1" data-cname="0" data-multisource="1" data-warning="0"><td><strong>portal.example.com</strong></td><td>93.184.216.38</td><td>A</td><td>—</td><td><span class="badge badge-source">crt.sh</span> <span class="badge badge-source">URLScan.io</span></td><td>HTTPS 200 (TLS: 88d) [HSTS,CSP,XFO,XCTO]</td><td><span class="badge badge-ok">RESOLVED</span></td></tr>
+<tr class="asset-row" data-resolved="1" data-cname="0" data-multisource="0" data-warning="0"><td><strong>vpn.example.com</strong></td><td>198.51.100.12</td><td>A</td><td>—</td><td><span class="badge badge-source">DNS Brute-Force</span></td><td>HTTPS 403 (TLS: 61d) [HSTS]</td><td><span class="badge badge-ok">RESOLVED</span></td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>Root Domain DNS Security Posture (example.com)</h2>
+        <table>
+            <thead>
+                <tr><th>Control / Record</th><th>Observed Configuration</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Name Servers (NS)</td><td>a.iana-servers.net, b.iana-servers.net</td></tr>
+                <tr><td>Mail Servers (MX)</td><td>10 mail.example.com</td></tr>
+                <tr><td>SPF Policy (TXT)</td><td>v=spf1 include:_spf.example.com -all</td></tr>
+                <tr><td>DMARC Policy (_dmarc)</td><td>v=DMARC1; p=reject; rua=mailto:dmarc@example.com</td></tr>
+                <tr><td>Certificate Authority Auth (CAA)</td><td>0 issue &quot;letsencrypt.org&quot;, 0 issue &quot;digicert.com&quot;</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>IP Subnet &amp; Infrastructure Clustering</h2>
+        <table>
+            <thead>
+                <tr><th>Subnet CIDR</th><th>Host Count</th><th>Associated Subdomains</th></tr>
+            </thead>
+            <tbody>
+<tr><td>93.184.216.0/24</td><td>4</td><td>api.example.com, auth.example.com, mail.example.com, portal.example.com</td></tr>
+<tr><td>198.51.100.0/24</td><td>2</td><td>grafana.example.com, vpn.example.com</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>Passive Enumeration Results</h2>
+        <table>
+            <thead>
+                <tr><th>Subdomain</th><th>Source</th></tr>
+            </thead>
+            <tbody>
+<tr><td>api.example.com</td><td>crt.sh, AlienVault OTX, CertSpotter</td></tr>
+<tr><td>auth.example.com</td><td>crt.sh, URLScan.io</td></tr>
+<tr><td>dev-docs.example.com</td><td>crt.sh</td></tr>
+<tr><td>grafana.example.com</td><td>AlienVault OTX</td></tr>
+<tr><td>mail.example.com</td><td>crt.sh, HackerTarget</td></tr>
+<tr><td>portal.example.com</td><td>crt.sh, URLScan.io</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>DNS Brute-Force Results</h2>
+        <table>
+            <thead>
+                <tr><th>Hostname</th><th>IP Address</th><th>Record Type</th></tr>
+            </thead>
+            <tbody>
+<tr><td>api.example.com</td><td>93.184.216.34</td><td>A</td></tr>
+<tr><td>mail.example.com</td><td>93.184.216.40</td><td>A</td></tr>
+<tr><td>vpn.example.com</td><td>198.51.100.12</td><td>A</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <footer>
+        Generated by Automated Recon Suite (v3.0) &mdash; for authorized security testing and defensive asset management only.
+    </footer>
+
+</div>
+<script>
+let currentFilter = 'all';
+
+function setCategoryFilter(filterName, btnEl) {
+    currentFilter = filterName;
+    const buttons = document.querySelectorAll('.filter-btn');
+    buttons.forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+    filterAssets();
+}
+
+function filterAssets() {
+    const query = (document.getElementById('assetSearch').value || '').toLowerCase();
+    const rows = document.querySelectorAll('#unifiedTable tbody tr.asset-row');
+    rows.forEach(row => {
+        const textMatch = row.innerText.toLowerCase().includes(query);
+        let catMatch = true;
+        if (currentFilter === 'resolved') catMatch = row.dataset.resolved === '1';
+        else if (currentFilter === 'cname') catMatch = row.dataset.cname === '1';
+        else if (currentFilter === 'multisource') catMatch = row.dataset.multisource === '1';
+        else if (currentFilter === 'warning') catMatch = row.dataset.warning === '1';
+        row.style.display = (textMatch && catMatch) ? '' : 'none';
+    });
+}
+
+let sortDirection = true;
+function sortTable(colIdx) {
+    const tbody = document.querySelector('#unifiedTable tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr.asset-row'));
+    if (!rows.length) return;
+    sortDirection = !sortDirection;
+    rows.sort((a, b) => {
+        const aText = a.children[colIdx].innerText.trim().toLowerCase();
+        const bText = b.children[colIdx].innerText.trim().toLowerCase();
+        return sortDirection ? aText.localeCompare(bText) : bText.localeCompare(aText);
+    });
+    rows.forEach(r => tbody.appendChild(r));
+}
+</script>
+</body>
+</html>

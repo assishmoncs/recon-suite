@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recon-suite"
+version = "3.0.0"
+description = "Automated External Attack-Surface Discovery, OSINT Subdomain Enumeration & DNS Hygiene Auditing Suite"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [
+    { name = "ASSISHMON C S" }
+]
+keywords = ["reconnaissance", "dns", "osint", "subdomains", "security-audit", "easm"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: Name Service (DNS)",
+    "Topic :: Security",
+]
+dependencies = [
+    "dnspython>=2.6.0,<3.0.0",
+    "colorama>=0.4.6,<1.0.0",
+    "requests>=2.31.0,<3.0.0",
+    "tqdm>=4.66.0,<5.0.0",
+    "reportlab>=4.0.0,<5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+recon-suite = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
+packages = ["modules"]

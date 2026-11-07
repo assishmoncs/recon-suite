@@ -1,75 +1,74 @@
 """
 modules/subdomains.py
 
-Passive subdomain enumeration.
+Concurrent passive subdomain enumeration with granular source attribution.
 
-This module enumerates subdomains *passively* (no DNS brute forcing) by
-calling the Sublist3r library directly in-process -- i.e. `import sublist3r`
-and call its `main()` function, rather than shelling out to
-`sublist3r.py` as a subprocess.
-
-Sublist3r aggregates results from search engines and OSINT sources
-(Google, Bing, Baidu, Yahoo, Netcraft, VirusTotal, ThreatCrowd, crt.sh,
-DNSdumpster, etc.) and returns a de-duplicated list of subdomains.
-
-If the `sublist3r` package is not installed, or the call to it fails for
-any reason (network restrictions, upstream API changes, etc.), this module
-falls back to a small, dependency-light passive lookup against the
-crt.sh Certificate Transparency log search engine so the tool still
-produces a usable result instead of crashing.
+Improvements in v3:
+  1. Strict boundary validation via ``is_valid_subdomain`` (fixes the bug where
+     ``badexample.com`` matched ``example.com``).
+  2. Safe stream suppression via ``contextlib.redirect_stdout`` / ``redirect_stderr``
+     so file descriptors and global streams are never leaked on exceptions.
+  3. Concurrent OSINT querying via ``ThreadPoolExecutor`` across 5 keyless
+     passive feeds:
+       - crt.sh (Certificate Transparency logs with exponential backoff)
+       - AlienVault OTX (Open Threat Exchange passive DNS)
+       - HackerTarget (Host search API)
+       - URLScan.io (Public domain scan index)
+       - CertSpotter (SSLMate Certificate Transparency API)
+  4. Per-subdomain provenance tracking (``Dict[str, List[str]]``) so reports
+     show the exact OSINT sources that discovered each individual hostname.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextlib
 import io
-import os
-import sys
 import time
-from typing import List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import requests
 
-from modules.utils import print_info, print_warning
+from modules.utils import is_valid_subdomain, print_info, print_warning
 
-# Sublist3r is distributed on PyPI as the `sublist3r` package.
-# Its import prints a noisy "coloring libraries not installed" warning
-# to stderr when colorama isn't set up its way. We suppress that.
+# Safely import Sublist3r while suppressing its stderr noise via contextlib
 try:
-    _devnull = open(os.devnull, "w")
-    _old_stderr = sys.stderr
-    sys.stderr = _devnull
-    import sublist3r  # type: ignore
-    sys.stderr = _old_stderr
-    _devnull.close()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        import sublist3r  # type: ignore
     SUBLIST3R_AVAILABLE = True
 except ImportError:
-    sys.stderr = _old_stderr if "_old_stderr" in dir() else sys.stderr
     SUBLIST3R_AVAILABLE = False
 
-# Additional passive sources for resilience
-_CRT_SH_TIMEOUT = 30  # seconds (increased from 15)
+_CRT_SH_TIMEOUT = 25
 _CRT_SH_RETRIES = 3
-_ALIENVAULT_TIMEOUT = 20
-_HACKERTARGET_TIMEOUT = 20
+_DEFAULT_API_TIMEOUT = 15
+_USER_AGENT = "ReconSuite/3.0 (+https://github.com/assishmoncs/recon-suite)"
+
+
+def _extract_valid_subdomains(candidates: List[str], domain: str) -> List[str]:
+    """Normalize and filter raw candidate strings down to valid subdomains of ``domain``."""
+    valid: set[str] = set()
+    target = domain.strip().lower()
+    for raw in candidates:
+        for line in raw.splitlines():
+            cleaned = line.strip().lower().lstrip("*.")
+            if is_valid_subdomain(cleaned, target):
+                valid.add(cleaned)
+    return sorted(valid)
 
 
 def _crtsh_lookup(domain: str) -> List[str]:
     """
     Passive subdomain lookup using crt.sh Certificate Transparency logs
     with retry logic and exponential backoff.
-
-    Args:
-        domain: The target domain, e.g. "example.com".
-
-    Returns:
-        A sorted list of unique subdomains found in CT logs (may be empty).
     """
-    found: set[str] = set()
     url = f"https://crt.sh/?q=%.{domain}&output=json"
+    headers = {"User-Agent": _USER_AGENT}
+    entries = []
 
     for attempt in range(1, _CRT_SH_RETRIES + 1):
         try:
-            response = requests.get(url, timeout=_CRT_SH_TIMEOUT)
+            response = requests.get(url, headers=headers, timeout=_CRT_SH_TIMEOUT)
             response.raise_for_status()
             entries = response.json()
             break
@@ -84,163 +83,242 @@ def _crtsh_lookup(domain: str) -> List[str]:
             else:
                 print_warning(f"crt.sh lookup failed after {_CRT_SH_RETRIES} attempts: {exc}")
                 return []
-    else:
-        return []
 
+    raw_names: List[str] = []
     for entry in entries:
-        name_value = entry.get("name_value", "")
-        for name in name_value.split("\n"):
-            name = name.strip().lower().lstrip("*.")
-            if name and name.endswith(domain):
-                found.add(name)
+        if isinstance(entry, dict):
+            name_val = entry.get("name_value", "")
+            if name_val:
+                raw_names.append(str(name_val))
+            common_name = entry.get("common_name", "")
+            if common_name:
+                raw_names.append(str(common_name))
 
-    return sorted(found)
+    return _extract_valid_subdomains(raw_names, domain)
 
 
 def _alienvault_otx_lookup(domain: str) -> List[str]:
-    """
-    Passive subdomain lookup via AlienVault OTX (Open Threat Exchange).
-    No API key required for basic queries.
-    """
-    found: set[str] = set()
+    """Passive subdomain lookup via AlienVault OTX passive DNS API."""
     url = f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns"
+    headers = {"User-Agent": _USER_AGENT}
 
     try:
-        response = requests.get(url, timeout=_ALIENVAULT_TIMEOUT)
+        response = requests.get(url, headers=headers, timeout=_DEFAULT_API_TIMEOUT)
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError) as exc:
         print_warning(f"AlienVault OTX lookup failed: {exc}")
         return []
 
-    for record in data.get("passive_dns", []):
-        hostname = record.get("hostname", "").strip().lower()
-        if hostname and hostname.endswith(domain):
-            found.add(hostname)
-
-    return sorted(found)
+    raw_names = [
+        str(record.get("hostname", ""))
+        for record in data.get("passive_dns", [])
+        if isinstance(record, dict) and record.get("hostname")
+    ]
+    return _extract_valid_subdomains(raw_names, domain)
 
 
 def _hackertarget_lookup(domain: str) -> List[str]:
-    """
-    Passive subdomain lookup via HackerTarget free API.
-    Returns subdomains from their host search.
-    """
-    found: set[str] = set()
+    """Passive subdomain lookup via HackerTarget free hostsearch API."""
     url = f"https://api.hackertarget.com/hostsearch/?q={domain}"
+    headers = {"User-Agent": _USER_AGENT}
 
     try:
-        response = requests.get(url, timeout=_HACKERTARGET_TIMEOUT)
+        response = requests.get(url, headers=headers, timeout=_DEFAULT_API_TIMEOUT)
         response.raise_for_status()
         text = response.text.strip()
     except (requests.RequestException, ValueError) as exc:
         print_warning(f"HackerTarget lookup failed: {exc}")
         return []
 
-    if not text or "error" in text.lower():
+    if not text or "error" in text.lower() or "api count exceeded" in text.lower():
         return []
 
-    for line in text.splitlines():
-        parts = line.split(",")
-        if parts:
-            hostname = parts[0].strip().lower()
-            if hostname and hostname.endswith(domain):
-                found.add(hostname)
+    raw_names = [line.split(",")[0] for line in text.splitlines() if line.strip()]
+    return _extract_valid_subdomains(raw_names, domain)
 
-    return sorted(found)
+
+def _urlscan_lookup(domain: str) -> List[str]:
+    """Passive subdomain lookup via URLScan.io public search API."""
+    url = f"https://urlscan.io/api/v1/search/?q=domain:{domain}&size=100"
+    headers = {"User-Agent": _USER_AGENT}
+
+    try:
+        response = requests.get(url, headers=headers, timeout=_DEFAULT_API_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        print_warning(f"URLScan.io lookup failed: {exc}")
+        return []
+
+    raw_names: List[str] = []
+    for result in data.get("results", []):
+        if isinstance(result, dict):
+            page = result.get("page", {})
+            if isinstance(page, dict) and page.get("domain"):
+                raw_names.append(str(page["domain"]))
+            task = result.get("task", {})
+            if isinstance(task, dict) and task.get("domain"):
+                raw_names.append(str(task["domain"]))
+
+    return _extract_valid_subdomains(raw_names, domain)
+
+
+def _certspotter_lookup(domain: str) -> List[str]:
+    """Passive subdomain lookup via CertSpotter Certificate Transparency API."""
+    url = (
+        f"https://api.certspotter.com/v1/issuances"
+        f"?domain={domain}&include_subdomains=true&expand=dns_names"
+    )
+    headers = {"User-Agent": _USER_AGENT}
+
+    try:
+        response = requests.get(url, headers=headers, timeout=_DEFAULT_API_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        print_warning(f"CertSpotter lookup failed: {exc}")
+        return []
+
+    raw_names: List[str] = []
+    if isinstance(data, list):
+        for entry in data:
+            if isinstance(entry, dict):
+                for dns_name in entry.get("dns_names", []):
+                    raw_names.append(str(dns_name))
+
+    return _extract_valid_subdomains(raw_names, domain)
+
+
+def _aggregate_passive_sources_detailed(domain: str) -> Tuple[Dict[str, List[str]], str]:
+    """
+    Query all passive OSINT feeds concurrently and track per-subdomain provenance.
+
+    Returns:
+        A tuple ``(source_map, summary_label)`` where ``source_map`` maps each
+        discovered subdomain to a sorted list of OSINT engines that found it,
+        and ``summary_label`` is a comma-separated string of contributing sources.
+    """
+    providers: List[Tuple[str, Callable[[str], List[str]]]] = [
+        ("crt.sh", _crtsh_lookup),
+        ("AlienVault OTX", _alienvault_otx_lookup),
+        ("HackerTarget", _hackertarget_lookup),
+        ("URLScan.io", _urlscan_lookup),
+        ("CertSpotter", _certspotter_lookup),
+    ]
+
+    print_info(
+        f"Querying {len(providers)} passive OSINT feeds concurrently "
+        f"({', '.join(name for name, _ in providers)})..."
+    )
+
+    source_map: Dict[str, List[str]] = {}
+    sources_used: List[str] = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(providers)) as executor:
+        future_to_name = {
+            executor.submit(func, domain): name for name, func in providers
+        }
+        # Collect in provider order for deterministic source labels
+        provider_results: Dict[str, List[str]] = {}
+        for future in concurrent.futures.as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                provider_results[name] = future.result()
+            except Exception as exc:
+                print_warning(f"Passive source '{name}' raised an unexpected error: {exc}")
+                provider_results[name] = []
+
+    for name, _ in providers:
+        subdomains_found = provider_results.get(name, [])
+        if subdomains_found:
+            sources_used.append(name)
+            for sub in subdomains_found:
+                if sub not in source_map:
+                    source_map[sub] = []
+                if name not in source_map[sub]:
+                    source_map[sub].append(name)
+
+    source_label = ", ".join(sources_used) if sources_used else "N/A"
+    return source_map, source_label
 
 
 def _aggregate_passive_sources(domain: str) -> Tuple[List[str], str]:
-    """
-    Query multiple passive OSINT sources and combine results.
+    """Backward-compatible wrapper returning ``(sorted_subdomains, source_label)``."""
+    source_map, source_label = _aggregate_passive_sources_detailed(domain)
+    return sorted(source_map.keys()), source_label
 
-    Sources: crt.sh, AlienVault OTX, HackerTarget.
-    Returns combined deduplicated results and a label of sources used.
+
+def enumerate_subdomains_detailed(
+    domain: str, threads: int = 40
+) -> Tuple[List[str], str, Dict[str, List[str]]]:
     """
-    all_found: set[str] = set()
+    Run passive subdomain enumeration and return full per-subdomain provenance.
+
+    Always combines Sublist3r (if installed and responsive) with the concurrent
+    multi-source OSINT aggregator so no single engine failure limits coverage.
+
+    Returns:
+        ``(sorted_subdomains, source_label, source_map)`` where ``source_map``
+        maps each subdomain to the list of sources that discovered it.
+    """
+    combined_map: Dict[str, List[str]] = {}
     sources_used: List[str] = []
 
-    print_info("Querying crt.sh Certificate Transparency logs...")
-    crtsh_results = _crtsh_lookup(domain)
-    if crtsh_results:
-        all_found.update(crtsh_results)
-        sources_used.append("crt.sh")
+    if SUBLIST3R_AVAILABLE:
+        print_info(
+            f"Querying passive OSINT sources via Sublist3r ({threads} threads)..."
+        )
+        try:
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                raw_results = sublist3r.main(
+                    domain,
+                    threads,
+                    savefile=None,
+                    ports=None,
+                    silent=True,
+                    verbose=False,
+                    enable_bruteforce=False,
+                    engines=None,
+                )
+            valid_sublist3r = _extract_valid_subdomains(list(raw_results or []), domain)
+            if valid_sublist3r:
+                sources_used.append("Sublist3r")
+                for sub in valid_sublist3r:
+                    combined_map.setdefault(sub, []).append("Sublist3r")
+            else:
+                print_warning("Sublist3r returned no results.")
+        except Exception as exc:
+            print_warning(f"Sublist3r enumeration failed ({exc}).")
+    else:
+        print_warning(
+            "The 'sublist3r' package is not installed; using built-in concurrent OSINT feeds."
+        )
 
-    print_info("Querying AlienVault OTX...")
-    otx_results = _alienvault_otx_lookup(domain)
-    if otx_results:
-        all_found.update(otx_results)
-        sources_used.append("AlienVault OTX")
-
-    print_info("Querying HackerTarget...")
-    ht_results = _hackertarget_lookup(domain)
-    if ht_results:
-        all_found.update(ht_results)
-        sources_used.append("HackerTarget")
+    fallback_map, _ = _aggregate_passive_sources_detailed(domain)
+    for sub, sub_sources in fallback_map.items():
+        existing = combined_map.setdefault(sub, [])
+        for src in sub_sources:
+            if src not in existing:
+                existing.append(src)
+            if src not in sources_used:
+                sources_used.append(src)
 
     source_label = ", ".join(sources_used) if sources_used else "N/A"
-    return sorted(all_found), source_label
+    return sorted(combined_map.keys()), source_label, combined_map
 
 
 def enumerate_subdomains(
     domain: str, threads: int = 40
 ) -> Tuple[List[str], str]:
     """
-    Run passive subdomain enumeration for ``domain``.
-
-    Tries Sublist3r first; if it fails or returns nothing, aggregates
-    results from multiple fallback passive sources (crt.sh, AlienVault
-    OTX, HackerTarget) with retry logic for resilience.
-
-    Args:
-        domain: The target domain, e.g. ``"example.com"``.
-        threads: Number of worker threads Sublist3r should use internally.
+    Backward-compatible passive enumeration entry point.
 
     Returns:
-        A ``(subdomains, source)`` tuple where *subdomains* is a sorted
-        list of unique discovered subdomains and *source* is a label
-        describing which engine(s) produced the results.
+        ``(subdomains, source_label)`` tuple.
     """
-    if SUBLIST3R_AVAILABLE:
-        print_info(
-            f"Querying passive OSINT sources via Sublist3r ({threads} threads, "
-            "this can take 10-60s)..."
-        )
-        try:
-            # Suppress Sublist3r's noisy stdout/stderr during execution
-            _captured = io.StringIO()
-            _old_stdout = sys.stdout
-            _old_stderr_run = sys.stderr
-            sys.stdout = _captured
-            sys.stderr = _captured
-            results = sublist3r.main(
-                domain,
-                threads,
-                savefile=None,
-                ports=None,
-                silent=True,
-                verbose=False,
-                enable_bruteforce=False,
-                engines=None,
-            )
-            sys.stdout = _old_stdout
-            sys.stderr = _old_stderr_run
-
-            if results:
-                return sorted(set(results)), "Sublist3r"
-            else:
-                print_warning("Sublist3r returned no results.")
-                print_info("Falling back to multi-source passive lookup...")
-                return _aggregate_passive_sources(domain)
-        except Exception as exc:
-            sys.stdout = _old_stdout
-            sys.stderr = _old_stderr_run
-            print_warning(f"Sublist3r enumeration failed ({exc}).")
-            print_info("Falling back to multi-source passive lookup...")
-            return _aggregate_passive_sources(domain)
-    else:
-        print_warning(
-            "The 'sublist3r' package is not installed (pip install sublist3r)."
-        )
-        print_info("Running multi-source passive lookup...")
-        return _aggregate_passive_sources(domain)
+    subdomains_list, source_label, _ = enumerate_subdomains_detailed(
+        domain, threads=threads
+    )
+    return subdomains_list, source_label

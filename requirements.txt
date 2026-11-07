@@ -1,6 +1,7 @@
-sublist3r
-dnspython
-colorama
-requests
-tqdm
-xhtml2pdf
+dnspython>=2.6.0,<3.0.0
+colorama>=0.4.6,<1.0.0
+requests>=2.31.0,<3.0.0
+tqdm>=4.66.0,<5.0.0
+reportlab>=4.0.0,<5.0.0
+xhtml2pdf>=0.2.15; python_version < "3.13"
+sublist3r>=1.1; python_version < "3.13"

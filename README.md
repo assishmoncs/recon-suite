@@ -1,161 +1,207 @@
-# Automated Recon Tool (v2)
+# Automated Recon Suite
 
-A clean, modular Python 3 command-line tool for domain reconnaissance.
-This is **version 2** with enhanced passive enumeration, PDF report
-generation, expanded wordlists, and improved error resilience.
+An enterprise-grade, concurrent command-line tool for External Attack Surface Management (EASM), passive OSINT subdomain enumeration, active DNS brute-forcing, and defensive DNS hygiene auditing.
 
-> **Ethical use only.** Only scan domains you own or have explicit, written
-> authorization to test. Unauthorized scanning of third-party infrastructure
-> may be illegal in your jurisdiction.
+> **Legal Disclaimer**: This tool is designed strictly for authorized security assessments, defensive asset discovery, and vulnerability management. Only audit domains you own or have explicit, documented authorization to test.
 
-## Features
+---
 
-- **Input validation** -- checks that the target looks like a real domain
-  before doing any work.
-- **Passive subdomain enumeration** -- uses the [Sublist3r](https://github.com/aboul3la/Sublist3r)
-  library *in-process* (`import sublist3r`), not via shell commands. If
-  Sublist3r isn't installed or returns no results, the tool aggregates
-  results from **multiple fallback sources**:
-  - **crt.sh** -- Certificate Transparency logs with retry logic and
-    exponential backoff (3 retries, 30s timeout).
-  - **AlienVault OTX** -- Open Threat Exchange passive DNS (no API key
-    required).
-  - **HackerTarget** -- Free host search API.
-- **Concurrent DNS brute force** -- reads candidate prefixes from
-  `wordlists/subdomains.txt` (109 entries covering common infrastructure
-  patterns), builds `<word>.<domain>` candidates, and resolves them
-  **concurrently** using `concurrent.futures.ThreadPoolExecutor`
-  (configurable via `--workers`). Resolution uses `dnspython` (falling back
-  to `socket` if unavailable). DNS record types (A / CNAME) are detected.
-- **Real-time progress bar** -- `tqdm` displays a dynamic progress bar
-  during DNS brute-force lookups.
-- **Dual report formats** -- generates both HTML and PDF reports by default:
-  - **HTML**: Self-contained dark-theme report with embedded CSS.
-  - **PDF**: Print-friendly A4 report via `xhtml2pdf`.
-  - Controlled via `--output-format` (html, pdf, or both).
-- **Robust error handling** -- specific exception handlers for network
-  errors, encoding issues, and I/O errors, with informative messages
-  and graceful fallbacks. Sublist3r's noisy stderr warnings are
-  suppressed.
-- **Portable file paths** -- default wordlist and report paths are resolved
-  relative to the script location using `pathlib`.
-- **Colored terminal output** -- via `colorama`, with clear progress
-  messages at each stage.
+## Overview
 
-## Project Structure
+The Automated Recon Suite provides security teams and penetration testers with a unified platform to map organization attack surfaces. It combines multi-source passive OSINT reconnaissance with concurrent active DNS resolution, wildcard catch-all filtering, dangling CNAME takeover auditing, HTTP/TLS posture probing, and multi-format reporting.
 
-```
+---
+
+## Core Capabilities
+
+- **Multi-Feed Passive OSINT Aggregation**: Queries five independent passive intelligence sources concurrently (`crt.sh`, `AlienVault OTX`, `HackerTarget`, `URLScan.io`, and `CertSpotter`), with optional integration for `Sublist3r`.
+- **Per-Subdomain Provenance Attribution**: Retains source metadata per discovered host, detailing exactly which OSINT feeds identified each asset.
+- **Strict Domain Boundary Validation**: Enforces RFC-compliant subdomain boundary validation to eliminate false positives and lookalike suffix matches.
+- **Active Wildcard DNS Detection**: Baselines target domains using randomized UUID probes to identify and filter catch-all `*.domain` records before brute-forcing begins.
+- **Comprehensive DNS Resolution**: Resolves discovered hosts across IPv4 (`A`), IPv6 (`AAAA`), and canonical names (`CNAME`) using configurable upstream nameservers.
+- **Dangling CNAME Hygiene Auditing**: Cross-references unresolved CNAME targets against signatures across 23 cloud and hosting providers (including AWS S3, GitHub Pages, Heroku, Azure, Fastly, and Cloudflare) to flag potential subdomain takeover risks.
+- **Root Domain Posture Assessment**: Inspects root-domain DNS configurations, auditing `NS`, `MX`, `SPF` (`v=spf1`), `DMARC` (`_dmarc`), and `CAA` records.
+- **HTTP and TLS Security Probing**: Validates web surface reachability, capturing HTTP status codes, TLS certificate expiration timelines, and key defensive response headers (`HSTS`, `CSP`, `X-Frame-Options`).
+- **Subnet Infrastructure Clustering**: Aggregates resolved hosts into IPv4 `/24` and IPv6 `/64` CIDR blocks to reveal shared hosting and network concentration.
+- **Attack-Surface Snapshot Diffing**: Compares current audit results against previous JSON reports to identify newly introduced, unchanged, or decommissioned subdomains.
+- **Multi-Format Enterprise Reporting**: Exports results to Interactive HTML, Print-Friendly A4 PDF, JSON, and CSV.
+
+---
+
+## Architecture and Project Structure
+
+```text
 recon-suite/
-│
-├── main.py                  # CLI entry point / orchestration
-├── requirements.txt
-├── README.md
-├── .gitignore
-├── reports/                 # Generated HTML + PDF reports land here
+├── main.py                        # Primary CLI pipeline orchestrator
+├── pyproject.toml                 # Package definition and console script entry point
+├── requirements.txt               # Pinned runtime dependencies
+├── README.md                      # Technical documentation
+├── LICENSE                        # MIT License
+├── .github/workflows/ci.yml       # Continuous integration workflow
+├── modules/
+│   ├── __init__.py                # Package version declaration (v3.0.0)
+│   ├── subdomains.py              # Concurrent passive OSINT aggregation and provenance mapping
+│   ├── dns_bruteforce.py          # Wildcard detection, active brute-force, and DNS posture checks
+│   ├── http_probe.py              # Concurrent HTTPS/HTTP endpoint and TLS certificate audit
+│   ├── report.py                  # HTML, PDF, JSON, and CSV generators and snapshot comparison
+│   └── utils.py                   # RFC domain validation and terminal output formatters
 ├── wordlists/
-│   └── subdomains.txt       # DNS brute-force wordlist (109 entries)
-└── modules/
-    ├── __init__.py
-    ├── subdomains.py        # Passive enumeration (Sublist3r + multi-source fallback)
-    ├── dns_bruteforce.py    # Concurrent active DNS brute force
-    ├── report.py            # HTML + PDF report generation
-    └── utils.py             # Domain validation + colored output helpers
+│   └── subdomains.txt             # Curated 394-entry high-signal infrastructure wordlist
+├── tests/
+│   └── test_recon_suite.py        # Offline unit and end-to-end integration test suite
+├── examples/                      # Reference report artifacts (HTML, PDF, JSON, CSV)
+└── reports/                       # Default directory for generated audit artifacts
 ```
 
-## Installation
+---
 
-Requires **Python 3.11+**.
+## Prerequisites and Installation
+
+### Requirements
+
+- **Python**: Version 3.11 or higher
+- Operating Systems: Linux, macOS, or Windows
+
+### Setup via Virtual Environment
 
 ```bash
-git clone <this-repo>
+# Clone the repository
+git clone https://github.com/assishmoncs/recon-suite.git
 cd recon-suite
+
+# Create and activate a virtual environment
 python3 -m venv venv
-source venv/bin/activate        # On Windows: venv\Scripts\activate
+source venv/bin/activate       # On Windows: .\venv\Scripts\activate
+
+# Install runtime dependencies
 pip install -r requirements.txt
 ```
 
-## Usage
+### Optional: Editable Package Installation
 
+To install the executable directly into your PATH as the `recon-suite` command:
+
+```bash
+pip install -e .
+recon-suite --help
+```
+
+---
+
+## Usage and Command-Line Interface
+
+### Common Examples
+
+**Standard Scan (HTML and PDF Output)**:
 ```bash
 python main.py example.com
 ```
 
-Optional flags:
+**Full Audit with HTTP/TLS Probing and All Output Formats**:
+```bash
+python main.py example.com --output-format all --probe-http
+```
+
+**Custom Nameservers and Concurrency**:
+```bash
+python main.py example.com --nameservers 1.1.1.1,8.8.8.8 --workers 30
+```
+
+**Custom Wordlist**:
+```bash
+python main.py example.com --wordlist /path/to/custom_wordlist.txt
+```
+
+**Attack-Surface Delta Comparison against Baseline**:
+```bash
+python main.py example.com --output-format all --diff reports/example.com_baseline.json
+```
+
+**Timestamped Report Filenames**:
+```bash
+python main.py example.com --output-dir reports/audits --timestamp
+```
+
+---
+
+## Command-Line Options Reference
+
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `domain` | Positional | Required | Target root domain to audit (e.g., `example.com`). |
+| `--wordlist` | Option | `wordlists/subdomains.txt` | Path to newline-delimited subdomain wordlist for active brute-forcing. |
+| `--threads` | Option | `40` | Worker threads allocated for passive search scrapers. |
+| `--workers` | Option | `20` | Concurrent worker threads for DNS resolution and HTTP/TLS probing. |
+| `--output-format` | Option | `both` | Output format: `html`, `pdf`, `json`, `csv`, `both` (HTML + PDF), or `all`. |
+| `--output-dir` | Option | `reports` | Target filesystem directory for generated report artifacts. |
+| `--nameservers` | Option | System Resolver | Comma-delimited list of DNS resolver IP addresses (e.g., `1.1.1.1,8.8.8.8`). |
+| `--probe-http` | Flag | `False` | Probe resolved hosts over HTTPS/HTTP for status codes, TLS validity, and security headers. |
+| `--diff` | Option | `None` | Path to a previous `.json` report to compute added, removed, and unchanged hosts. |
+| `--timestamp` | Flag | `False` | Append UTC timestamp (`YYYYMMDD_HHMMSS`) to report filenames to preserve historical runs. |
+
+---
+
+## Output Formats and Deliverables
+
+Generated reports are written to the directory specified by `--output-dir` (default: `reports/`):
+
+1. **Interactive HTML (`<domain>.html`)**:
+   - Modern, self-contained dashboard with real-time text search.
+   - Filter pills for live resolved hosts, CNAME records, multi-source discoveries, and hygiene warnings.
+   - Sortable columns, root-domain DNS posture cards, and IP `/24` subnet clustering tables.
+2. **Executive PDF (`<domain>.pdf`)**:
+   - Clean, print-ready document formatted for A4 pages.
+   - Powered by a multi-engine fallback pipeline (`xhtml2pdf` -> `reportlab` -> `weasyprint`).
+3. **Machine-Readable JSON (`<domain>.json`)**:
+   - Fully structured schema containing asset metadata, source provenance, DNS posture details, HTTP probing data, and diff metrics.
+   - Suitable for ingest into SIEM, SOAR, or asset management systems.
+4. **Tabular CSV (`<domain>.csv`)**:
+   - Flat tabular inventory compatible with spreadsheet applications, data pipelines, and reporting tools.
+
+---
+
+## Default Wordlist Strategy
+
+The suite bundles a curated list of 394 high-signal subdomains in `wordlists/subdomains.txt`. This list is partitioned into 14 functional categories:
+
+- Core Infrastructure, Cloud & Nameservers
+- Mail, Exchange & Messaging
+- APIs, Microservices & Integration
+- Environments, Staging & Quality Assurance
+- DevOps, CI/CD & Orchestration
+- Authentication, Identity & Access Management
+- Remote Access, Networking & Security
+- Administration & Control Panels
+- Databases, Caches & Data Platforms
+- Monitoring, Observability & Health
+- Storage, Static Assets & Content Delivery
+- Customer Support & Enterprise SaaS
+- E-Commerce & Billing
+- Mobile, IoT, AI & Partner Portals
+
+This curated size enables scans to complete in under five seconds with default concurrency settings while avoiding DNS rate-limiting. For exhaustive brute-force audits, larger external wordlists (such as SecLists) can be passed using the `--wordlist` option.
+
+---
+
+## Testing and Verification
+
+The test suite runs completely offline using deterministic mocks for all external network, HTTP, and DNS calls.
 
 ```bash
-python main.py example.com --wordlist wordlists/subdomains.txt --threads 40 --workers 20 --output-format both
+# Execute the complete test suite
+python3 -m unittest discover -s tests -v
 ```
 
-| Flag              | Description                                          | Default                      |
-|-------------------|------------------------------------------------------|------------------------------|
-| `domain`          | Target domain (positional, required)                 | --                           |
-| `--wordlist`      | Path to the DNS brute-force wordlist                 | `wordlists/subdomains.txt`   |
-| `--threads`       | Threads used internally by Sublist3r                 | `40`                         |
-| `--workers`       | Concurrent workers for DNS brute-force lookups       | `20`                         |
-| `--output-format` | Report format: `html`, `pdf`, or `both`              | `both`                       |
+The test suite validates:
+- Domain and boundary validation logic
+- Passive OSINT multi-source aggregation and per-host provenance attribution
+- Wildcard DNS detection and false-positive filtering
+- Dangling cloud CNAME hygiene auditing
+- Snapshot diff computation
+- End-to-end report generation across HTML, PDF, JSON, and CSV
 
-### Example output
-
-```
-==================================================
-      Automated Recon Tool -- v2
-==================================================
-Target: example.com
-
-[*] Running passive enumeration...
-[*] Querying passive OSINT sources via Sublist3r (40 threads, this can take 10-60s)...
-[!] Sublist3r returned no results.
-[*] Falling back to multi-source passive lookup...
-[*] Querying crt.sh Certificate Transparency logs...
-[*] Querying AlienVault OTX...
-[*] Querying HackerTarget...
-[+] Found 23 subdomains (via crt.sh, AlienVault OTX, HackerTarget).
-
-[*] Running DNS brute force...
-[*] Loaded 109 candidate prefixes from 'wordlists/subdomains.txt'.
-[*] Resolving with 20 concurrent workers...
-DNS brute-force: 100%|##########| 109/109 [00:12<00:00, 8.74host/s]
-[+] Found 6 additional hosts.
-
-[*] Generating report...
-[+] Done!
-
-[*] Report(s):
-  reports/example.com.html
-  reports/example.com.pdf
-```
-
-## How it works
-
-1. **`main.py`** validates the domain (`modules/utils.validate_domain`) and
-   orchestrates the three stages below, printing colored progress messages
-   throughout.
-2. **`modules/subdomains.py`** calls `sublist3r.main()` directly as a Python
-   function call (no subprocess), with Sublist3r's noisy stderr suppressed.
-   If Sublist3r can't be imported, raises an error, or returns empty results,
-   it falls back to an aggregated multi-source lookup (crt.sh with retry +
-   AlienVault OTX + HackerTarget).
-3. **`modules/dns_bruteforce.py`** loads `wordlists/subdomains.txt` (109
-   entries), builds `<word>.<domain>` for each entry, and resolves them
-   concurrently using `ThreadPoolExecutor` with `dnspython` (or `socket`
-   fallback). A `tqdm` progress bar shows real-time progress.
-4. **`modules/report.py`** renders results into:
-   - A self-contained HTML file (dark theme, stat cards, two results tables).
-   - A PDF file (A4, print-friendly light theme) using `xhtml2pdf`.
-
-## Error Fixes in v2
-
-The following issues from v1 have been addressed:
-
-| Issue | Fix |
-|-------|-----|
-| `[!] Error: Coloring libraries not installed` | Sublist3r's stderr suppressed during import and execution |
-| `Sublist3r engine 'DNSdumpster' failed` | Automatic fallback to multi-source passive lookup when Sublist3r returns no results |
-| `crt.sh fallback lookup failed: Read timed out` | Timeout increased to 30s with 3 retries + exponential backoff |
-| `Found 0 subdomains` | Added AlienVault OTX and HackerTarget as additional sources |
-| Small wordlist (7 entries) | Expanded to 109 common infrastructure prefixes |
-| No PDF output | Added xhtml2pdf-based PDF report generation |
+---
 
 ## License
 
-For educational and authorized security-testing purposes only.
+This project is licensed under the [MIT License](LICENSE).
