@@ -35,7 +35,7 @@ recon-suite/
 │   ├── report.py                  # Interactive HTML, multi-engine PDF, JSON, CSV & snapshot diffing
 │   └── utils.py                   # RFC domain/subdomain boundary validation & colored CLI output
 ├── wordlists/
-│   └── subdomains.txt             # Curated 165-prefix infrastructure & cloud wordlist
+│   └── subdomains.txt             # Curated 394-prefix infrastructure & cloud wordlist
 ├── tests/
 │   └── test_recon_suite.py        # 22 offline unit & end-to-end integration tests
 ├── examples/                      # Pre-generated sample outputs (HTML, PDF, JSON, CSV)

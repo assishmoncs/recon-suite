@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -220,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     output_format = args.output_format
     output_dir = args.output_dir
     filename_prefix = (
-        f"{domain}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        f"{domain}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
         if args.timestamp
         else domain
     )
